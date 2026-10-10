@@ -3,6 +3,7 @@ class Scoreboard;
   mailbox #(Result) mon2scb;
   int num_expected;
   int num_checked;
+  int num_failed;
   Coverage cov;
 
   function new(mailbox #(Packet) drv2scb, mailbox #(Result) mon2scb, int num_expected);
@@ -10,16 +11,22 @@ class Scoreboard;
     this.mon2scb = mon2scb;
     this.num_expected = num_expected;
     this.num_checked = 0;
+    this.num_failed = 0;
     this.cov = new();
   endfunction
 
   function automatic logic [31:0] predict_lane(input vpu_op_e op, input logic [31:0] a, input logic [31:0] b);
+    logic [31:0] y;
     case (op)
-      VPU_FADD: return sf_f32_add(a, b);
-      VPU_FSUB: return sf_f32_sub(a, b);
-      VPU_FMUL: return sf_f32_mul(a, b);
-      default:  return '0;
+      VPU_FADD: y = sf_f32_add(a, b);
+      VPU_FSUB: y = sf_f32_sub(a, b);
+      VPU_FMUL: y = sf_f32_mul(a, b);
+      default:  $fatal(1, "Unsupported opcode %0d", op);
     endcase
+    // The vendored FP32 units return a canonical quiet NaN, rather than
+    // propagating the sign/payload as the SoftFloat 8086-SSE build does.
+    if (y[30:23] == 8'hff && y[22:0] != 0) y = 32'h7fc00000;
+    return y;
   endfunction
 
   function automatic vec_t predict(input Packet p);
@@ -56,6 +63,8 @@ class Scoreboard;
 
       if (data_pass) begin
         $display("[SCB] PASS vd=%0d", r.vd);
+      end else begin
+        num_failed++;
       end
 
       cov.sample(p, r);
@@ -64,6 +73,9 @@ class Scoreboard;
       if (num_checked == num_expected) begin
         $display("[SCB] Completed %0d checks", num_checked);
         cov.report();
+        if (num_failed != 0)
+          $fatal(1, "[SCB] FAIL: %0d of %0d packets failed", num_failed, num_checked);
+        $display("[SCB] TEST PASS: %0d packets, %0d lanes checked", num_checked, num_checked * NUM_LANES);
         $finish;
       end
     end

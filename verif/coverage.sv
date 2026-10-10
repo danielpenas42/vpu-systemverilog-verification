@@ -47,9 +47,9 @@ class Coverage;
       bins pos_inf   = {FP32_POS_INF};
       bins neg_inf   = {FP32_NEG_INF};
       bins pos_nan   = {FP32_POS_NAN};
-      bins neg_nan   = {FP32_NEG_NAN};
       bins subnormal = {FP32_SUBNORMAL};
       bins normal    = {FP32_NORMAL};
+      ignore_bins neg_nan = {FP32_NEG_NAN};
     }
 
     op_x_vd:       cross op_cp, vd_cp;
@@ -63,10 +63,12 @@ class Coverage;
 
   function void sample(Packet pkt, Result res);
     p = pkt;
-    src0_cat = fp32_category(pkt.src0_data[0]);
-    src1_cat = fp32_category(pkt.src1_data[0]);
-    result_cat = fp32_category(res.data[0]);
-    vpu_cg.sample();
+    foreach (pkt.src0_data[lane]) begin
+      src0_cat = fp32_category(pkt.src0_data[lane]);
+      src1_cat = fp32_category(pkt.src1_data[lane]);
+      result_cat = fp32_category(res.data[lane]);
+      vpu_cg.sample();
+    end
   endfunction
 
   function void report();

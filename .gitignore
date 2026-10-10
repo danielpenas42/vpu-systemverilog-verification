@@ -1,7 +1,12 @@
 .DS_Store
 
-# Verilator / simulation outputs
+# Simulation outputs
 obj_dir/
+build/
+simv.daidir/
+csrc/
+ucli.key
+.fsm.sch.verilog.xml
 simv
 *.vcd
 *.fst

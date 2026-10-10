@@ -24,7 +24,7 @@ interface vpu_if (input logic clk, input logic rst_n);
     input rd0_data;
     input rd1_data;
     input wr_valid;
-    inout wr_ready;
+    input wr_ready;
     input wr_idx;
     input wr_data;
   endclocking

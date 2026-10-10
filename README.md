@@ -1,19 +1,16 @@
-# VPU Verification Project
+# FP32 VPU Verification Project
 
-This is a VPU project I had worked on before and wanted to expand into a more
-complete SystemVerilog verification environment. The design is a small FP32
-vector processing unit with a vector register file. I used it as a way to
-practice more realistic verification ideas instead of only writing simple
-directed testbenches.
+This started as a small VPU project that I had worked on before. I came back to
+it because I wanted to learn how a more complete SystemVerilog verification
+environment fits together instead of only writing directed testbenches.
 
-The main things I expanded were the class-based testbench structure, randomized
-packets, mailboxes between components, a scoreboard with a SoftFloat reference
-model, functional coverage, and a few SystemVerilog assertions. For the FP32
-arithmetic itself, I used open-source RTL from the internet that already had
-SoftFloat-backed testing, so the focus of this project could stay on the VPU
-integration and verification environment.
+The DUT is a 16-lane FP32 vector processing unit with a 32-entry vector register
+file. The verification side now has randomized packet classes, mailboxes, a
+driver and monitor, a scoreboard using SoftFloat, functional coverage, and some
+SystemVerilog assertions. It has been really cool to see how all of these pieces
+work together and how coverage can point out cases that random testing missed.
 
-## What It Does
+## What the VPU Does
 
 The DUT accepts a vector instruction with:
 
@@ -51,7 +48,7 @@ The FP32 datapaths come from a small open-source RTL subset of
 Those modules are combinational. `rtl/fp32_alu.sv` wraps them and registers the
 selected result, so the VPU still sees a one-cycle ALU latency.
 
-## Testbench
+## Verification Environment
 
 - `verif/vpu_pkg.sv`: shared constants, typedefs, packet/result classes, DPI imports
 - `verif/vpu_if.sv`: VPU instruction/writeback interface
@@ -72,38 +69,94 @@ The scoreboard uses Berkeley SoftFloat through DPI-C:
 - `cmodel/softfloat/`: SoftFloat source
 - `cmodel/softfloat_dpi.c`: small C wrapper for `f32_add`, `f32_sub`, and `f32_mul`
 
-That lets the scoreboard compare each 32-bit FP32 lane bit-for-bit against a
-known-good software model.
+That lets the scoreboard compare each 32-bit FP32 lane against the software
+model. The vendored RTL always returns `0x7fc00000` for a NaN result, so the
+scoreboard converts SoftFloat's NaN predictions to that same encoding before
+the bit-for-bit comparison. Other results, including signed zero, are compared
+without conversion. The VPU interface does not expose FP exception flags.
 
-## Running Tests
+## Running the Tests
 
-Use:
+These commands assume VCS has already been set up in your shell. From the
+repository directory, initialize the SoftFloat submodule once:
 
 ```sh
-./run_verilator_softfloat.sh
+git submodule update --init --recursive
 ```
 
-This script does three main things:
+Then run whichever test you want:
 
-1. Builds the local SoftFloat static library.
-2. Compiles the RTL, verification files, DPI wrapper, and vendored FP32 units
-   with Verilator.
-3. Runs `top_tb`.
+```sh
+./run_vcs_softfloat.sh +TEST=base     +NUM_TESTS=100 +ntb_random_seed=1
+./run_vcs_softfloat.sh +TEST=mixed +NUM_TESTS=100 +ntb_random_seed=1
+./run_vcs_softfloat.sh +TEST=directed                +ntb_random_seed=1
+./run_vcs_softfloat.sh +TEST=all      +NUM_TESTS=100 +ntb_random_seed=1
+```
 
-On my local machine, the full Verilator C++ build may fail with a missing
-`<cstddef>` standard-library header. The SystemVerilog lint path passes, so that
-failure is a local C++ toolchain issue rather than an RTL integration issue.
+- `base` uses unrestricted random FP32 operands.
+- `mixed` gives more weight to zeros, infinities, NaNs, subnormals, and normal
+  values so useful combinations are reached faster.
+- `directed` runs the six targeted packet classes.
+- `all` runs base, mixed, and directed in that order.
+
+`NUM_TESTS` controls the number of packets in both the base and mixed phases.
+For example, `TEST=all` with `NUM_TESTS=100` sends 206 packets: 100 base, 100
+mixed, and six directed. Setting the random seed makes a run repeatable on the
+same simulator version.
+
+The runner builds SoftFloat, compiles the files in `verif/files.f`, and runs the
+selected test. A successful run ends with `[SCB] TEST PASS`. Logs are saved
+under `build/vcs/`.
+
+## Coverage
+
+Coverage accumulates as separately named runs in `build/vcs/coverage.vdb`.
+I use `RUN_NAME` to keep runs separate:
+
+```sh
+RUN_NAME=all_seed1 ./run_vcs_softfloat.sh \
+  +TEST=all +NUM_TESTS=100 +ntb_random_seed=1
+```
+
+Generate the HTML report with:
+
+```sh
+urg -dir build/vcs/coverage.vdb -report build/vcs/coverage_report
+```
+
+Open `build/vcs/coverage_report/dashboard.html` to inspect code, assertion, and
+functional coverage.
+
+The covergroup samples all 16 lanes, so each vector packet contributes 16
+matched source/result samples. Negative-NaN inputs are still covered, but a
+negative-NaN result is ignored because this RTL always returns the positive
+canonical NaN value `0x7fc00000`.
+
+My larger run used 10,000 packets for each random phase. It checked 20,006
+packets and 320,096 lanes, and it reached every functional bin that is possible
+for this design.
 
 ## What I Was Practicing
 
-The goal was not only to make the VPU run, but to practice verification pieces
-that show up in larger environments:
+This project helped me practice:
 
-- clean SystemVerilog interfaces and clocking blocks
+- SystemVerilog interfaces and clocking blocks
 - generator/driver/monitor/scoreboard structure
 - mailboxes for communication between testbench components
 - constrained random packet classes and child packet specialization
 - functional coverage and coverage-driven test planning
 - SystemVerilog assertions for valid/ready-style protocol behavior
 - DPI-C integration with a real software reference model
-- integrating known-good open-source FP32 RTL into the VPU datapath
+- debugging coverage holes instead of only increasing the random test count
+
+There is still more I would like to try, especially writeback backpressure,
+reset during an active operation, and directed cases for rare FP32 rounding
+paths. Those areas show why a high functional coverage number does not
+automatically mean every code path has been tested.
+
+## Third-Party Code
+
+The FP32 arithmetic modules under `third_party/` come from the
+`adachi6k/fp32-combinational-units` project. Berkeley SoftFloat is included as a
+Git submodule under `cmodel/softfloat/`. Their original license files and
+copyright notices are kept with the source.

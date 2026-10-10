@@ -1,7 +1,9 @@
 module top_tb();
     import vpu_pkg::*;
 
-    localparam int NUM_TESTS = 100;
+    int num_tests = 100;
+    int total_packets;
+    string test_name = "base";
 
     logic      clk;
     logic      rst_n;
@@ -9,6 +11,9 @@ module top_tb();
     initial begin
         clk = 0;
         rst_n = 0;
+        vif.in_valid = 0;
+        load_if.load0_en = 0;
+        load_if.load1_en = 0;
     end
 
     always begin
@@ -69,7 +74,9 @@ module top_tb();
     );
 
     initial begin
-        Generator gen;
+        RandomBaseTest base_test;
+        RandomMixedTest mixed_test;
+        DirectedEdgeTest directed_test;
         Driver drv;
         Monitor mon;
         Scoreboard scb;
@@ -78,24 +85,53 @@ module top_tb();
         drv2scb = new();
         mon2scb = new();
 
-        gen = new(gen2drv, NUM_TESTS);
+        if (!$value$plusargs("TEST=%s", test_name)) test_name = "base";
+        if (!$value$plusargs("NUM_TESTS=%d", num_tests)) num_tests = 100;
+
+        if (!(test_name inside {"base", "mixed", "directed", "all"}))
+            $fatal(1, "Choose TEST=base, mixed, directed, or all");
+        if (test_name == "directed") num_tests = 6;
+        if (num_tests <= 0) $fatal(1, "NUM_TESTS must be positive");
+        total_packets = (test_name == "all") ? 2 * num_tests + 6 : num_tests;
+        $display("[TB] TEST=%s NUM_TESTS=%0d TOTAL_PACKETS=%0d",
+                 test_name, num_tests, total_packets);
+
         drv = new(vif, load_if, gen2drv, drv2scb);
         mon = new(vif, mon2scb);
-        scb = new(drv2scb, mon2scb, NUM_TESTS);
+        scb = new(drv2scb, mon2scb, total_packets);
 
         rst_n = 0;
         repeat (5) @(posedge clk);
+        @(negedge clk);
         rst_n = 1;
 
         fork
-            gen.run();
+            begin
+                if (test_name inside {"base", "all"}) begin
+                    $display("[TB] Running base");
+                    base_test = new(gen2drv, num_tests);
+                    base_test.run();
+                    if (test_name == "all") wait (scb.num_checked == num_tests);
+                end
+                if (test_name inside {"mixed", "all"}) begin
+                    $display("[TB] Running mixed");
+                    mixed_test = new(gen2drv, num_tests);
+                    mixed_test.run();
+                    if (test_name == "all") wait (scb.num_checked == 2 * num_tests);
+                end
+                if (test_name inside {"directed", "all"}) begin
+                    $display("[TB] Running directed");
+                    directed_test = new(gen2drv);
+                    directed_test.run();
+                end
+            end
             drv.run();
             mon.run();
             scb.run();
         join_none
 
         // timeout
-        repeat (1000) @(posedge clk);
-        $fatal("Test timeout");
+        repeat (20 * total_packets + 100) @(posedge clk);
+        $fatal(1, "Test timeout");
     end
 endmodule

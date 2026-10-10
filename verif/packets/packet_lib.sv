@@ -83,7 +83,9 @@ class MixedSpecialPacket extends Packet;
         32'hFF800000 := 10,                       // -inf
         [32'h7F800001:32'h7FFFFFFF] :/ 10,        // +NaN range
         [32'hFF800001:32'hFFFFFFFF] :/ 10,        // -NaN range
-        [32'h00800000:32'h7F7FFFFF] :/ 40         // positive normal range
+        [32'h00000001:32'h007FFFFF] :/ 10,        // positive subnormal range
+        [32'h80000001:32'h807FFFFF] :/ 10,        // negative subnormal range
+        [32'h00800000:32'h7F7FFFFF] :/ 20         // positive normal range
       };
     }
     foreach (src1_data[i]) {
@@ -94,7 +96,9 @@ class MixedSpecialPacket extends Packet;
         32'hFF800000 := 10,                       // -inf
         [32'h7F800001:32'h7FFFFFFF] :/ 10,        // +NaN range
         [32'hFF800001:32'hFFFFFFFF] :/ 10,        // -NaN range
-        [32'h00800000:32'h7F7FFFFF] :/ 40         // positive normal range
+        [32'h00000001:32'h007FFFFF] :/ 10,        // positive subnormal range
+        [32'h80000001:32'h807FFFFF] :/ 10,        // negative subnormal range
+        [32'h00800000:32'h7F7FFFFF] :/ 20         // positive normal range
       };
     }
   }
