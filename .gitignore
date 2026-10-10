@@ -1,0 +1,16 @@
+.DS_Store
+
+# Verilator / simulation outputs
+obj_dir/
+simv
+*.vcd
+*.fst
+*.log
+
+# Generic build products
+*.o
+*.a
+*.d
+*.so
+*.dylib
+
